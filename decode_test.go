@@ -2,13 +2,14 @@ package yaml_test
 
 import (
 	"errors"
-	. "gopkg.in/check.v1"
-	"gopkg.in/yaml.v2"
 	"math"
 	"net"
 	"reflect"
 	"strings"
 	"time"
+
+	. "gopkg.in/check.v1"
+	"gopkg.in/yaml.v2"
 )
 
 var unmarshalIntTest = 123
@@ -986,6 +987,81 @@ func (s *S) TestUnmarshalStrict(c *C) {
 	err = yaml.UnmarshalStrict([]byte("a: 1\nb: 2\nc: 3"), &v)
 	c.Check(err, ErrorMatches, "yaml: unmarshal errors:\n  line 1: field c not found in struct struct { A int; B int }")
 }
+
+type tagUnmarshalerType struct {
+}
+
+func (t *tagUnmarshalerType) UnmarshalYAMLTag(tag string, fieldValue reflect.Value) reflect.Value {
+
+	output := reflect.ValueOf(make(map[string]interface{}))
+	key := reflect.ValueOf(tag)
+
+	output.SetMapIndex(key, fieldValue)
+
+	return output
+}
+
+func (s *S) TestTagUnmarshalNonStringPrimitiveValue(c *C) {
+	// All values after the "Tag" will be converted to string
+	a := `some: !TheTag 1`
+	var out map[string]interface{}
+
+	un := &tagUnmarshalerType{}
+	yaml.RegisterTagUnmarshaler("!TheTag", un)
+	yaml.Unmarshal([]byte(a), &out)
+	c.Assert(out, DeepEquals, map[string]interface{}{"some": map[string]interface{}{"TheTag": "1"}})
+	yaml.UnRegisterTagUnmarshaler("!TheTag")
+}
+
+func (s *S) TestTagUnmarshalToMap(c *C) {
+	a := `some: !TheTag hello`
+	var out map[string]interface{}
+
+	un := &tagUnmarshalerType{}
+	yaml.RegisterTagUnmarshaler("!TheTag", un)
+	yaml.Unmarshal([]byte(a), &out)
+	c.Assert(out, DeepEquals, map[string]interface{}{"some": map[string]interface{}{"TheTag": "hello"}})
+	yaml.UnRegisterTagUnmarshaler("!TheTag")
+}
+
+func (s *S) TestTagUnmarshalWithArrayValue(c *C) {
+
+	a := "key:\n  some: !TheTag ['a', 'b']"
+	var out map[string]map[string]interface{}
+
+	un := &tagUnmarshalerType{}
+	yaml.RegisterTagUnmarshaler("!TheTag", un)
+	yaml.Unmarshal([]byte(a), &out)
+	c.Assert(out, DeepEquals, map[string]map[string]interface{}{"key": {"some": map[string]interface{}{"TheTag": []interface{}{"a", "b"}}}})
+	yaml.UnRegisterTagUnmarshaler("!TheTag")
+}
+
+func (s *S) TestTagUnmarshalWithMapValue(c *C) {
+
+	a := "some: !Tag {'a': 'b'}"
+	var out map[string]map[string]interface{}
+
+	un := &tagUnmarshalerType{}
+	yaml.RegisterTagUnmarshaler("!Tag", un)
+	yaml.Unmarshal([]byte(a), &out)
+	c.Assert(out, DeepEquals, map[string]map[string]interface{}{"some": {"Tag": map[string]interface{}{"a": "b"}}})
+	yaml.UnRegisterTagUnmarshaler("!Tag")
+}
+
+func (s *S) TestTagUnmarshalWithNestedTags(c *C) {
+
+	a := "some: !Tag [!OtherTag 'val1', 'val2']"
+	var out map[string]interface{}
+
+	un := &tagUnmarshalerType{}
+	yaml.RegisterTagUnmarshaler("!Tag", un)
+	yaml.RegisterTagUnmarshaler("!OtherTag", un)
+	yaml.Unmarshal([]byte(a), &out)
+	c.Assert(out, DeepEquals, map[string]interface{}{"some": map[string]interface{}{"Tag": []interface{}{ map[string]interface{} {"OtherTag": "val1"}  , "val2"}}})
+	yaml.UnRegisterTagUnmarshaler("!Tag")
+	yaml.UnRegisterTagUnmarshaler("!OtherTag")
+}
+
 
 //var data []byte
 //func init() {
